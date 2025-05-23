@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>亞羅的上班開網頁偷學五十音小程式</title>
+<title>亞羅的上班開網頁偷學五十音小程式-V1.1</title>
 <style>
 /* 基本樣式設定 */
 body { font-family: Arial, sans-serif; margin: 20px; background: #fdfdfd; color: #333; }
@@ -22,7 +22,7 @@ h1 { font-size: 1.5em; }
 </style>
 </head>
 <body>
-<h1>亞羅的上班開網頁偷學五十音小程式</h1>
+<h1>亞羅的上班開網頁偷學五十音小程式-V1.1</h1>
 <div id="quiz-container">
   <div id="prompt">題目</div>
   <div id="options"></div>
@@ -413,15 +413,29 @@ function handleOptionClick(btn) {
         // 檢查是否達到解鎖新假名的條件（僅一般模式下檢查）
         if (!currentQuestion.isReview) {
             let readyToUnlock = true;
+            // 先檢查全局累計答題門檻
             for (let t = 1; t <= 4; t++) {
                 if (correctCounts['t' + t] < nextUnlockStage * 10) {
                     readyToUnlock = false;
                     break;
                 }
             }
+            // 若已滿足答題門檻，進一步檢查最新假名是否各題型達標
+            if (readyToUnlock && unlockedCount >= 5) {
+                const lastIndex = unlockedCount - 1;
+                const lastRomaji = kanaList[lastIndex].romaji;
+                const stageIndex = unlockedCount - 4;
+                const requiredTimes = 2 + stageIndex;
+                for (let t = 1; t <= 4; t++) {
+                    if (stats[lastRomaji]['t' + t].correct < requiredTimes) {
+                        readyToUnlock = false;
+                        break;
+                    }
+                }
+            }
+            // ✅ 確定全部條件都滿足，才解鎖下一個假名
             if (readyToUnlock && unlockedCount < kanaList.length) {
-                // 解鎖下一個假名
-                let newLetter = kanaList[unlockedCount];
+                const newLetter = kanaList[unlockedCount];
                 unlockedCount++;
                 nextUnlockStage++;
                 stats[newLetter.romaji] = {
@@ -431,12 +445,10 @@ function handleOptionClick(btn) {
                     t4: { correct: 0, wrong: 0 }
                 };
                 hintCount[newLetter.romaji] = 5;
-                // 更新 localStorage 資料
                 saveLocal('kanaUnlockedCount', unlockedCount);
                 saveLocal('kanaNextUnlockStage', nextUnlockStage);
                 saveLocal('kanaStats', stats);
                 saveLocal('kanaHintCount', hintCount);
-                // 提示使用者新假名已解鎖
                 alert('新音解鎖: ' + newLetter.romaji + ' (平:' + newLetter.hira + ' / 片:' + newLetter.kata + ')');
             }
         }
@@ -496,7 +508,7 @@ document.getElementById('toggle-stats').onclick = function() {
   <ul style="line-height: 1.8; font-size: 1em;">
     <li><strong>提示機制：</strong>新解鎖的假名每題最多有 <strong>5 次提示</strong>（系統會幫你用橘色框標出答案），並且不記錄正確錯誤。</li>
     <li><strong>錯題複習：</strong>答錯的假名會自動加入複習清單，系統會安排你 <strong>隔天起陸續複習</strong>，幫助你記牢。</li>
-    <li><strong>假名解鎖：</strong>每一種題型（羅馬拼音對假名、假名對羅馬拼音、平→片、片→平）累計答對 <strong>10 題</strong> 就會解鎖新假名。題數門檻會隨著進度逐漸增加，越後面的假名需要更多答對題數才能解鎖。</li>
+    <li><strong>假名解鎖：</strong>每一種題型（羅馬拼音對假名、假名對羅馬拼音、平→片、片→平）累計答對 <strong>10 題</strong> 就會解鎖新假名。題數門檻會隨著進度逐漸增加，越後面的假名需要更多答對題數才能解鎖。從第6個假名開始，還需在上一個假名的四種題型中各答對一定次數（初始為 <strong>3 次</strong>，之後逐步增加）才能繼續解鎖下一假名。</li>
     <li><strong>進度儲存：</strong>所有學習紀錄會自動儲存在你的瀏覽器（<code>localStorage</code>），<strong>不需登入</strong>。</li>
     <li><strong>裝置限制：</strong>每台裝置、每個瀏覽器的進度是分開儲存的。若換裝置，學習紀錄不會自動同步。</li>
   </ul>
