@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>亞羅的上班開網頁偷學五十音小程式-V1.1</title>
+<title>亞羅的上班開網頁偷學五十音小程式V1.2</title>
 <style>
 /* 基本樣式設定 */
 body { font-family: Arial, sans-serif; margin: 20px; background: #fdfdfd; color: #333; }
@@ -22,7 +22,7 @@ h1 { font-size: 1.5em; }
 </style>
 </head>
 <body>
-<h1>亞羅的上班開網頁偷學五十音小程式-V1.1</h1>
+<h1>亞羅的上班開網頁偷學五十音小程式V1.2</h1>
 <div id="quiz-container">
   <div id="prompt">題目</div>
   <div id="options"></div>
@@ -501,7 +501,233 @@ document.getElementById('next-btn').onclick = function() {
 document.getElementById('toggle-stats').onclick = function() {
     toggleStats();
 };
+
+// 匯出 localStorage 成 JSON 字串
+function exportProgress() {
+  const keys = [
+    'kanaUnlockedCount',
+    'kanaNextUnlockStage',
+    'kanaCorrectCounts',
+    'kanaStats',
+    'kanaReview',
+    'kanaHintCount'
+  ];
+  let data = {};
+  keys.forEach(key => {
+    data[key] = localStorage.getItem(key);
+  });
+  const jsonStr = JSON.stringify(data, null, 2);
+  const output = document.getElementById('export-output');
+  output.value = jsonStr;
+  output.select();
+  document.execCommand('copy');
+  alert('學習紀錄已複製，可儲存或貼到其他裝置使用');
+}
+
+// 匯入 JSON 字串並還原到 localStorage
+function importProgress() {
+  const input = document.getElementById('import-input').value;
+  if (!input) {
+    alert('請先貼上 JSON 資料！');
+    return;
+  }
+  try {
+    const data = JSON.parse(input);
+    // 資料驗證
+    if (typeof data !== 'object' || data === null) {
+      throw new Error('Invalid format');
+    }
+    const requiredKeys = [
+      'kanaUnlockedCount',
+      'kanaNextUnlockStage',
+      'kanaCorrectCounts',
+      'kanaStats',
+      'kanaReview',
+      'kanaHintCount'
+    ];
+    for (const key of requiredKeys) {
+      if (!(key in data)) {
+        throw new Error('Invalid format');
+      }
+    }
+    // 驗證各欄位型態與內容
+    // 1. kanaUnlockedCount 應為數字
+    let importUnlockedCount = data.kanaUnlockedCount;
+    if (typeof importUnlockedCount === 'string') {
+      importUnlockedCount = JSON.parse(importUnlockedCount);
+    }
+    if (typeof importUnlockedCount !== 'number' || isNaN(importUnlockedCount)) {
+      throw new Error('Invalid format');
+    }
+    // 2. kanaNextUnlockStage 應為數字
+    let importNextUnlockStage = data.kanaNextUnlockStage;
+    if (typeof importNextUnlockStage === 'string') {
+      importNextUnlockStage = JSON.parse(importNextUnlockStage);
+    }
+    if (typeof importNextUnlockStage !== 'number' || isNaN(importNextUnlockStage)) {
+      throw new Error('Invalid format');
+    }
+    // 3. kanaCorrectCounts 應為物件，且含 t1~t4 鍵，其值為數字
+    let importCorrectCounts = data.kanaCorrectCounts;
+    if (typeof importCorrectCounts === 'string') {
+      importCorrectCounts = JSON.parse(importCorrectCounts);
+    }
+    if (typeof importCorrectCounts !== 'object' || importCorrectCounts === null) {
+      throw new Error('Invalid format');
+    }
+    const ccKeys = ['t1', 't2', 't3', 't4'];
+    for (const t of ccKeys) {
+      if (!(t in importCorrectCounts)) {
+        throw new Error('Invalid format');
+      }
+      let countVal = importCorrectCounts[t];
+      if (typeof countVal === 'string') {
+        // 嘗試轉為數字型別
+        if (!isNaN(countVal)) {
+          countVal = Number(countVal);
+        } else {
+          throw new Error('Invalid format');
+        }
+      }
+      if (typeof countVal !== 'number' || isNaN(countVal)) {
+        throw new Error('Invalid format');
+      }
+      importCorrectCounts[t] = countVal;
+    }
+    // 4. kanaStats 應為物件，每個鍵為假名，值為包含 t1~t4 統計的物件
+    let importStats = data.kanaStats;
+    if (typeof importStats === 'string') {
+      importStats = JSON.parse(importStats);
+    }
+    if (typeof importStats !== 'object' || importStats === null) {
+      throw new Error('Invalid format');
+    }
+    for (const kana in importStats) {
+      const statObj = importStats[kana];
+      if (typeof statObj !== 'object' || statObj === null) {
+        throw new Error('Invalid format');
+      }
+      // 檢查 t1~t4 統計物件是否存在
+      for (const t of ccKeys) {
+        if (!(t in statObj)) {
+          throw new Error('Invalid format');
+        }
+        const statEntry = statObj[t];
+        if (typeof statEntry !== 'object' || statEntry === null) {
+          throw new Error('Invalid format');
+        }
+        if (!('correct' in statEntry) || !('wrong' in statEntry)) {
+          throw new Error('Invalid format');
+        }
+        // 檢查 correct 和 wrong 為數字
+        let correctVal = statEntry.correct;
+        let wrongVal = statEntry.wrong;
+        if (typeof correctVal === 'string') {
+          if (!isNaN(correctVal)) {
+            correctVal = Number(correctVal);
+          } else {
+            throw new Error('Invalid format');
+          }
+        }
+        if (typeof wrongVal === 'string') {
+          if (!isNaN(wrongVal)) {
+            wrongVal = Number(wrongVal);
+          } else {
+            throw new Error('Invalid format');
+          }
+        }
+        if (typeof correctVal !== 'number' || typeof wrongVal !== 'number' ||
+            isNaN(correctVal) || isNaN(wrongVal)) {
+          throw new Error('Invalid format');
+        }
+        // 將轉換後的值存回物件，確保為數字型別
+        statEntry.correct = correctVal;
+        statEntry.wrong = wrongVal;
+      }
+    }
+    // 5. kanaReview 應為物件，每個鍵為假名（如有），值為具有 stageIndex（數字）和 nextDue（字串）屬性的物件
+    let importReview = data.kanaReview;
+    if (typeof importReview === 'string') {
+      importReview = JSON.parse(importReview);
+    }
+    if (typeof importReview !== 'object' || importReview === null) {
+      throw new Error('Invalid format');
+    }
+    for (const kana in importReview) {
+      const reviewObj = importReview[kana];
+      if (typeof reviewObj !== 'object' || reviewObj === null) {
+        throw new Error('Invalid format');
+      }
+      if (!('stageIndex' in reviewObj) || !('nextDue' in reviewObj)) {
+        throw new Error('Invalid format');
+      }
+      let stageVal = reviewObj.stageIndex;
+      let dueVal = reviewObj.nextDue;
+      if (typeof stageVal === 'string') {
+        if (!isNaN(stageVal)) {
+          stageVal = Number(stageVal);
+        } else {
+          throw new Error('Invalid format');
+        }
+      }
+      if (typeof stageVal !== 'number' || isNaN(stageVal)) {
+        throw new Error('Invalid format');
+      }
+      if (typeof dueVal !== 'string') {
+        throw new Error('Invalid format');
+      }
+      // 格式正確，保留 stageIndex 數字型別
+      reviewObj.stageIndex = stageVal;
+    }
+    // 6. kanaHintCount 應為物件，每個鍵為假名，值為數字（提示剩餘次數）
+    let importHintCount = data.kanaHintCount;
+    if (typeof importHintCount === 'string') {
+      importHintCount = JSON.parse(importHintCount);
+    }
+    if (typeof importHintCount !== 'object' || importHintCount === null) {
+      throw new Error('Invalid format');
+    }
+    for (const kana in importHintCount) {
+      let hintVal = importHintCount[kana];
+      if (typeof hintVal === 'string') {
+        if (!isNaN(hintVal)) {
+          hintVal = Number(hintVal);
+        } else {
+          throw new Error('Invalid format');
+        }
+      }
+      if (typeof hintVal !== 'number' || isNaN(hintVal)) {
+        throw new Error('Invalid format');
+      }
+      importHintCount[kana] = hintVal;
+    }
+    // 驗證通過，將資料寫入 localStorage
+    localStorage.setItem('kanaUnlockedCount', JSON.stringify(importUnlockedCount));
+    localStorage.setItem('kanaNextUnlockStage', JSON.stringify(importNextUnlockStage));
+    localStorage.setItem('kanaCorrectCounts', JSON.stringify(importCorrectCounts));
+    localStorage.setItem('kanaStats', JSON.stringify(importStats));
+    localStorage.setItem('kanaReview', JSON.stringify(importReview));
+    localStorage.setItem('kanaHintCount', JSON.stringify(importHintCount));
+    alert('匯入成功！頁面即將重新整理套用進度。');
+    location.reload();
+  } catch (e) {
+    alert('匯入資料格式不正確，請確認檔案內容');
+  }
+}
 </script>
+<!-- 學習紀錄工具 -->
+<div style="margin-top: 40px;">
+  <h2>進度備份工具</h2>
+  <button onclick="exportProgress()">匯出學習紀錄</button>
+  <textarea id="export-output" rows="5"
+            style="width:100%; margin-top:10px; overflow:auto;"
+            readonly></textarea>
+
+  <div style="margin-top: 20px;">
+    <label for="import-input">請貼上學習紀錄 JSON：</label>
+    <textarea id="import-input" rows="5" style="width:100%; margin-top:5px;"></textarea>
+    <button onclick="importProgress()">匯入學習紀錄</button>
+  </div>
 <hr>
 <div style="margin-top: 40px; padding: 20px; background-color: #f9f9f9; border-radius: 8px;">
   <h2>使用說明</h2>
