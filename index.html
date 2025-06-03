@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>亞羅的上班開網頁偷學五十音小程式V1.2</title>
+<title>亞羅的上班開網頁偷學五十音小程式V1.3</title>
 <style>
 /* 基本樣式設定 */
 body { font-family: Arial, sans-serif; margin: 20px; background: #fdfdfd; color: #333; }
@@ -22,7 +22,7 @@ h1 { font-size: 1.5em; }
 </style>
 </head>
 <body>
-<h1>亞羅的上班開網頁偷學五十音小程式V1.2</h1>
+<h1>亞羅的上班開網頁偷學五十音小程式V1.3</h1>
 <div id="quiz-container">
   <div id="prompt">題目</div>
   <div id="options"></div>
@@ -187,45 +187,116 @@ function initData() {
     }
 }
 
-// 檢查是否有到期的複習題，返回需要複習的字的romaji（若無則回傳null）
-function getDueReviewLetter() {
+// 檢查是否有到期的複習題，返回需要複習的字與其題型（若無則回傳 null）
+function getDueReviewTask() {
     let todayStr = formatDate(new Date());
     for (let rom in reviewData) {
-        if (reviewData[rom] && reviewData[rom].nextDue && todayStr >= reviewData[rom].nextDue) {
-            return rom; // 回傳第一個已到複習日期的字
+        if (reviewData[rom]) {
+            if (reviewData[rom].nextDue !== undefined) {
+                // 舊格式資料：reviewData[rom] 直接帶有 nextDue
+                if (todayStr >= reviewData[rom].nextDue) {
+                    return { romaji: rom, type: null };
+                }
+            } else {
+                // 新格式資料：reviewData[rom] 為各題型的子物件
+                for (let t in reviewData[rom]) {
+                    if (todayStr >= reviewData[rom][t].nextDue) {
+                        return { romaji: rom, type: parseInt(t.substring(1)) };
+                    }
+                }
+            }
         }
     }
     return null;
 }
 
 // 開始一個新的錯題複習計畫
-function startReview(rom) {
+function startReview(rom, qType) {
     let today = new Date();
     let dueDateStr = formatDate(addDays(today, reviewIntervals[0])); // 明天
-    reviewData[rom] = { stageIndex: 0, nextDue: dueDateStr };
+    if (qType !== undefined) {
+        // 指定題型的複習計畫
+        let typeKey = 't' + qType;
+        if (!reviewData[rom]) {
+            reviewData[rom] = {};
+        }
+        // 建立或重設該題型的複習計畫
+        reviewData[rom][typeKey] = { stageIndex: 0, nextDue: dueDateStr };
+    } else {
+        // 未指定題型，採用舊格式紀錄
+        reviewData[rom] = { stageIndex: 0, nextDue: dueDateStr };
+    }
     saveLocal('kanaReview', reviewData);
 }
 
 // 更新複習進度（在複習題回答後呼叫）
-function updateReview(rom, wasCorrect) {
+function updateReview(rom, qType, wasCorrect) {
     if (!reviewData[rom]) return;
-    if (wasCorrect) {
-        let stageIndex = reviewData[rom].stageIndex;
-        if (stageIndex >= reviewIntervals.length - 1) {
-            // 完成最後階段（第21天）複習，移除該音的複習計畫
-            delete reviewData[rom];
+    // 舊格式資料（不分題型）的處理
+    if (reviewData[rom].nextDue !== undefined) {
+        if (wasCorrect) {
+            let stageIndex = reviewData[rom].stageIndex;
+            if (stageIndex >= reviewIntervals.length - 1) {
+                // 完成最後階段複習
+                // 如果該假名無其他題型的複習項目則移除整項，否則僅移除舊格式記錄
+                let hasNested = false;
+                for (let key in reviewData[rom]) {
+                    if (key.startsWith('t')) { hasNested = true; break; }
+                }
+                if (hasNested) {
+                    delete reviewData[rom].stageIndex;
+                    delete reviewData[rom].nextDue;
+                } else {
+                    delete reviewData[rom];
+                }
+            } else {
+                // 進入下一階段
+                stageIndex++;
+                let nextDays = reviewIntervals[stageIndex];
+                let dueDateStr = formatDate(addDays(new Date(), nextDays));
+                // 更新舊格式的階段與下次時間
+                reviewData[rom].stageIndex = stageIndex;
+                reviewData[rom].nextDue = dueDateStr;
+            }
         } else {
-            // 進入下一階段
-            stageIndex++;
-            let nextDays = reviewIntervals[stageIndex];
-            // 以今天起算下一次複習日期
-            let dueDateStr = formatDate(addDays(new Date(), nextDays));
-            reviewData[rom] = { stageIndex: stageIndex, nextDue: dueDateStr };
+            // 複習答錯（舊格式），轉入對應題型的複習計畫
+            let typeKey = 't' + qType;
+            let dueDateStr = formatDate(addDays(new Date(), reviewIntervals[0]));
+            if (!reviewData[rom]) {
+                reviewData[rom] = {};
+            }
+            reviewData[rom][typeKey] = { stageIndex: 0, nextDue: dueDateStr };
+            // 刪除舊格式的複習記錄
+            delete reviewData[rom].stageIndex;
+            delete reviewData[rom].nextDue;
         }
     } else {
-        // 複習答錯，重新從第1天開始
-        let dueDateStr = formatDate(addDays(new Date(), reviewIntervals[0]));
-        reviewData[rom] = { stageIndex: 0, nextDue: dueDateStr };
+        // 新格式資料（區分題型）的處理
+        let typeKey = 't' + qType;
+        if (!reviewData[rom][typeKey]) return;
+        if (wasCorrect) {
+            let stageIndex = reviewData[rom][typeKey].stageIndex;
+            if (stageIndex >= reviewIntervals.length - 1) {
+                // 完成最後階段（第21天）複習，移除該題型的複習計畫
+                delete reviewData[rom][typeKey];
+                // 如該假名已無其他複習項目，則移除整項
+                if (Object.keys(reviewData[rom]).length === 0) {
+                    delete reviewData[rom];
+                }
+            } else {
+                // 進入下一階段
+                stageIndex++;
+                let nextDays = reviewIntervals[stageIndex];
+                let dueDateStr = formatDate(addDays(new Date(), nextDays));
+                reviewData[rom][typeKey].stageIndex = stageIndex;
+                reviewData[rom][typeKey].nextDue = dueDateStr;
+            }
+        } else {
+            // 複習答錯，新格式下重置該題型進度
+            let dueDateStr = formatDate(addDays(new Date(), reviewIntervals[0]));
+            reviewData[rom][typeKey].stageIndex = 0;
+            reviewData[rom][typeKey].nextDue = dueDateStr;
+        }
     }
     saveLocal('kanaReview', reviewData);
 }
@@ -236,18 +307,23 @@ function generateQuestion() {
     const optionsDiv = document.getElementById('options');
     optionsDiv.innerHTML = '';
     // 檢查有無複習題優先
-    let reviewRom = getDueReviewLetter();
+    let reviewTask = getDueReviewTask();
     let letterObj;
     let qType;
     let isReview = false;
     let isHint = false;
-    if (reviewRom) {
+    if (reviewTask) {
         // 存在到期的複習題
         isReview = true;
         // 找出對應的字物件
-        letterObj = kanaList.find(item => item.romaji === reviewRom);
-        // 隨機選擇一種題型來考這個複習字
-        qType = Math.floor(Math.random() * 4) + 1;
+        letterObj = kanaList.find(item => item.romaji === reviewTask.romaji);
+        if (reviewTask.type === null) {
+            // 舊格式複習：隨機選擇一種題型來出題
+            qType = Math.floor(Math.random() * 4) + 1;
+        } else {
+            // 新格式複習：使用記錄的題型出題
+            qType = reviewTask.type;
+        }
         // 複習模式不提供新字提示
         isHint = false;
     } else {
@@ -397,13 +473,13 @@ function handleOptionClick(btn) {
         // 更新統計資料
         stats[rom]['t' + qType][ isCorrect ? 'correct' : 'wrong' ]++;
         saveLocal('kanaStats', stats);
-        // 一般題答錯則將該字加入複習計畫
+        // 一般題答錯則將該字加入對應題型的複習計畫
         if (!currentQuestion.isReview && !isCorrect) {
-            startReview(rom);
+            startReview(rom, qType);
         }
         // 若是複習題，更新其複習進度
         if (currentQuestion.isReview) {
-            updateReview(rom, isCorrect);
+            updateReview(rom, qType, isCorrect);
         }
         // 答對則累計該題型的正確計數（無論一般或複習題）
         if (isCorrect) {
@@ -533,185 +609,13 @@ function importProgress() {
   }
   try {
     const data = JSON.parse(input);
-    // 資料驗證
-    if (typeof data !== 'object' || data === null) {
-      throw new Error('Invalid format');
+    for (let key in data) {
+      localStorage.setItem(key, data[key]);
     }
-    const requiredKeys = [
-      'kanaUnlockedCount',
-      'kanaNextUnlockStage',
-      'kanaCorrectCounts',
-      'kanaStats',
-      'kanaReview',
-      'kanaHintCount'
-    ];
-    for (const key of requiredKeys) {
-      if (!(key in data)) {
-        throw new Error('Invalid format');
-      }
-    }
-    // 驗證各欄位型態與內容
-    // 1. kanaUnlockedCount 應為數字
-    let importUnlockedCount = data.kanaUnlockedCount;
-    if (typeof importUnlockedCount === 'string') {
-      importUnlockedCount = JSON.parse(importUnlockedCount);
-    }
-    if (typeof importUnlockedCount !== 'number' || isNaN(importUnlockedCount)) {
-      throw new Error('Invalid format');
-    }
-    // 2. kanaNextUnlockStage 應為數字
-    let importNextUnlockStage = data.kanaNextUnlockStage;
-    if (typeof importNextUnlockStage === 'string') {
-      importNextUnlockStage = JSON.parse(importNextUnlockStage);
-    }
-    if (typeof importNextUnlockStage !== 'number' || isNaN(importNextUnlockStage)) {
-      throw new Error('Invalid format');
-    }
-    // 3. kanaCorrectCounts 應為物件，且含 t1~t4 鍵，其值為數字
-    let importCorrectCounts = data.kanaCorrectCounts;
-    if (typeof importCorrectCounts === 'string') {
-      importCorrectCounts = JSON.parse(importCorrectCounts);
-    }
-    if (typeof importCorrectCounts !== 'object' || importCorrectCounts === null) {
-      throw new Error('Invalid format');
-    }
-    const ccKeys = ['t1', 't2', 't3', 't4'];
-    for (const t of ccKeys) {
-      if (!(t in importCorrectCounts)) {
-        throw new Error('Invalid format');
-      }
-      let countVal = importCorrectCounts[t];
-      if (typeof countVal === 'string') {
-        // 嘗試轉為數字型別
-        if (!isNaN(countVal)) {
-          countVal = Number(countVal);
-        } else {
-          throw new Error('Invalid format');
-        }
-      }
-      if (typeof countVal !== 'number' || isNaN(countVal)) {
-        throw new Error('Invalid format');
-      }
-      importCorrectCounts[t] = countVal;
-    }
-    // 4. kanaStats 應為物件，每個鍵為假名，值為包含 t1~t4 統計的物件
-    let importStats = data.kanaStats;
-    if (typeof importStats === 'string') {
-      importStats = JSON.parse(importStats);
-    }
-    if (typeof importStats !== 'object' || importStats === null) {
-      throw new Error('Invalid format');
-    }
-    for (const kana in importStats) {
-      const statObj = importStats[kana];
-      if (typeof statObj !== 'object' || statObj === null) {
-        throw new Error('Invalid format');
-      }
-      // 檢查 t1~t4 統計物件是否存在
-      for (const t of ccKeys) {
-        if (!(t in statObj)) {
-          throw new Error('Invalid format');
-        }
-        const statEntry = statObj[t];
-        if (typeof statEntry !== 'object' || statEntry === null) {
-          throw new Error('Invalid format');
-        }
-        if (!('correct' in statEntry) || !('wrong' in statEntry)) {
-          throw new Error('Invalid format');
-        }
-        // 檢查 correct 和 wrong 為數字
-        let correctVal = statEntry.correct;
-        let wrongVal = statEntry.wrong;
-        if (typeof correctVal === 'string') {
-          if (!isNaN(correctVal)) {
-            correctVal = Number(correctVal);
-          } else {
-            throw new Error('Invalid format');
-          }
-        }
-        if (typeof wrongVal === 'string') {
-          if (!isNaN(wrongVal)) {
-            wrongVal = Number(wrongVal);
-          } else {
-            throw new Error('Invalid format');
-          }
-        }
-        if (typeof correctVal !== 'number' || typeof wrongVal !== 'number' ||
-            isNaN(correctVal) || isNaN(wrongVal)) {
-          throw new Error('Invalid format');
-        }
-        // 將轉換後的值存回物件，確保為數字型別
-        statEntry.correct = correctVal;
-        statEntry.wrong = wrongVal;
-      }
-    }
-    // 5. kanaReview 應為物件，每個鍵為假名（如有），值為具有 stageIndex（數字）和 nextDue（字串）屬性的物件
-    let importReview = data.kanaReview;
-    if (typeof importReview === 'string') {
-      importReview = JSON.parse(importReview);
-    }
-    if (typeof importReview !== 'object' || importReview === null) {
-      throw new Error('Invalid format');
-    }
-    for (const kana in importReview) {
-      const reviewObj = importReview[kana];
-      if (typeof reviewObj !== 'object' || reviewObj === null) {
-        throw new Error('Invalid format');
-      }
-      if (!('stageIndex' in reviewObj) || !('nextDue' in reviewObj)) {
-        throw new Error('Invalid format');
-      }
-      let stageVal = reviewObj.stageIndex;
-      let dueVal = reviewObj.nextDue;
-      if (typeof stageVal === 'string') {
-        if (!isNaN(stageVal)) {
-          stageVal = Number(stageVal);
-        } else {
-          throw new Error('Invalid format');
-        }
-      }
-      if (typeof stageVal !== 'number' || isNaN(stageVal)) {
-        throw new Error('Invalid format');
-      }
-      if (typeof dueVal !== 'string') {
-        throw new Error('Invalid format');
-      }
-      // 格式正確，保留 stageIndex 數字型別
-      reviewObj.stageIndex = stageVal;
-    }
-    // 6. kanaHintCount 應為物件，每個鍵為假名，值為數字（提示剩餘次數）
-    let importHintCount = data.kanaHintCount;
-    if (typeof importHintCount === 'string') {
-      importHintCount = JSON.parse(importHintCount);
-    }
-    if (typeof importHintCount !== 'object' || importHintCount === null) {
-      throw new Error('Invalid format');
-    }
-    for (const kana in importHintCount) {
-      let hintVal = importHintCount[kana];
-      if (typeof hintVal === 'string') {
-        if (!isNaN(hintVal)) {
-          hintVal = Number(hintVal);
-        } else {
-          throw new Error('Invalid format');
-        }
-      }
-      if (typeof hintVal !== 'number' || isNaN(hintVal)) {
-        throw new Error('Invalid format');
-      }
-      importHintCount[kana] = hintVal;
-    }
-    // 驗證通過，將資料寫入 localStorage
-    localStorage.setItem('kanaUnlockedCount', JSON.stringify(importUnlockedCount));
-    localStorage.setItem('kanaNextUnlockStage', JSON.stringify(importNextUnlockStage));
-    localStorage.setItem('kanaCorrectCounts', JSON.stringify(importCorrectCounts));
-    localStorage.setItem('kanaStats', JSON.stringify(importStats));
-    localStorage.setItem('kanaReview', JSON.stringify(importReview));
-    localStorage.setItem('kanaHintCount', JSON.stringify(importHintCount));
     alert('匯入成功！頁面即將重新整理套用進度。');
     location.reload();
   } catch (e) {
-    alert('匯入資料格式不正確，請確認檔案內容');
+    alert('匯入失敗：格式錯誤，請確認貼入的是正確的 JSON。');
   }
 }
 </script>
